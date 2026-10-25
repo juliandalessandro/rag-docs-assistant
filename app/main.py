@@ -1,9 +1,23 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, field_validator
 
 from app.database import get_connection
+from app.documents import create_document, get_document
 
 
 app = FastAPI(title="RAG Docs Assistant")
+
+class DocumentCreate(BaseModel):
+    filename: str
+    content: str
+
+    @field_validator("filename", "content")
+    @classmethod
+    def values_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("This field must not be blank")
+
+        return value
 
 
 @app.get("/health")
@@ -16,3 +30,22 @@ def database_health_check():
         conn.execute("SELECT 1")
 
     return {"status": "ok", "database": "connected"}
+
+@app.post("/documents", status_code=201)
+def create_document_endpoint(document: DocumentCreate):
+    return create_document(
+        filename=document.filename,
+        content=document.content,
+    )
+
+@app.get("/documents/{document_id}")
+def get_document_endpoint(document_id: int):
+    document = get_document(document_id)
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    return document
