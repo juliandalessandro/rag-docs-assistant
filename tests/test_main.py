@@ -18,7 +18,7 @@ def test_database_connection():
             "SELECT current_database(), current_user"
         ).fetchone()
     
-    assert result == ("rag_docs", "rag_user")
+    assert result == ("rag_docs_test", "rag_user")
 
 def test_database_health_check():
     response = client.get("/health/db")
