@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 
 from app.database import get_connection
-from app.documents import create_document, get_document
+from app.documents import create_document, get_document, list_documents
 
 
 app = FastAPI(title="RAG Docs Assistant")
@@ -49,3 +49,7 @@ def get_document_endpoint(document_id: int):
         )
 
     return document
+
+@app.get("/documents")
+def list_documents_endpoint():
+    return list_documents()

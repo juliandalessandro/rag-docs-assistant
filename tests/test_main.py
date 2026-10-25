@@ -90,3 +90,25 @@ def test_get_document_not_found():
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Document not found"}
+
+def test_list_documents():
+    create_payload = {
+        "filename": "document_to_list.txt",
+        "content": "Content to verify document listing.",
+    }
+
+    create_response = client.post("/documents", json=create_payload)
+
+    assert create_response.status_code == 201
+
+    response = client.get("/documents")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert isinstance(data, list)
+    assert any(
+        document["id"] == create_response.json()["id"]
+        for document in data
+    )

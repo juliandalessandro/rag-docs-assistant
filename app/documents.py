@@ -39,3 +39,23 @@ def get_document(document_id: int) -> dict | None:
             "content": row[2],
             "created_at": row[3]
         }
+
+def list_documents() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, filename, content, created_at
+            FROM documents
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "filename": row[1],
+            "content": row[2],
+            "created_at": row[3]
+        }
+        for row in rows
+    ]
