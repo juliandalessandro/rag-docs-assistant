@@ -19,3 +19,9 @@ def test_database_connection():
         ).fetchone()
     
     assert result == ("rag_docs", "rag_user")
+
+def test_database_health_check():
+    response = client.get("/health/db")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "database": "connected"}
