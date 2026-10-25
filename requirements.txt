@@ -1,3 +1,5 @@
 fastapi[standard]
 pytest
 httpx
+psycopg[binary]
+python-dotenv
