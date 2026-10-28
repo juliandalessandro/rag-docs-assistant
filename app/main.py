@@ -1,8 +1,10 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+﻿from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, field_validator
 
 from app.database import get_connection
 from app.documents import create_document, get_document, list_documents
+from app.processing import process_document
+from app.search import search_chunks
 
 
 app = FastAPI(title="RAG Docs Assistant")
@@ -56,6 +58,42 @@ def get_document_endpoint(document_id: int):
 def list_documents_endpoint():
     return list_documents()
 
+@app.get("/search")
+def search_endpoint(
+    q: str,
+    limit: int = 5,
+    max_distance: float | None = None,
+):
+    if not q.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Search query cannot be blank",
+        )
+
+    if limit < 1 or limit > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="Limit must be between 1 and 20",
+        )
+
+    if max_distance is not None and max_distance < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="max_distance must be greater than or equal to 0",
+        )
+
+    results = search_chunks(
+        query=q,
+        limit=limit,
+        max_distance=max_distance,
+    )
+
+    return {
+        "query": q,
+        "results": results,
+    }
+
+
 @app.post("/documents/upload", status_code=201)
 async def upload_document(file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith(".txt"):
@@ -94,7 +132,14 @@ async def upload_document(file: UploadFile = File(...)):
             detail="File cannot be empty",
         )
 
-    return create_document(
+    document = create_document(
         filename=file.filename,
         content=text_content,
     )
+
+    process_document(
+        document_id=document["id"],
+        content=document["content"],
+    )
+
+    return document

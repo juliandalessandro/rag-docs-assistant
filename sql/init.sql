@@ -1,6 +1,19 @@
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS documents (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     filename TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-)
+);
+
+CREATE TABLE IF NOT EXISTS document_chunks (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    document_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    embedding VECTOR(384),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (document_id, chunk_index)
+);

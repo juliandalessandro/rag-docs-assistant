@@ -4,3 +4,5 @@ httpx
 psycopg[binary]
 python-dotenv
 python-multipart
+sentence-transformers
+pgvector

@@ -1,0 +1,8 @@
+﻿RAG Docs Assistant test document.
+
+The capital of France is Paris.
+The capital of Italy is Rome.
+The capital of Japan is Tokyo.
+
+PostgreSQL stores the documents.
+Vector embeddings help find text by semantic similarity.

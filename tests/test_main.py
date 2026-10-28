@@ -133,6 +133,46 @@ def test_upload_text_file():
     assert data["content"] == "This is an uploaded test document."
     assert "created_at" in data
 
+def test_upload_text_file_creates_chunks():
+    files = {
+        "file": (
+            "chunked_upload.txt",
+            "This is the content that should be stored as a chunk.",
+            "text/plain",
+        )
+    }
+
+    response = client.post("/documents/upload", files=files)
+
+    assert response.status_code == 201
+
+    document_id = response.json()["id"]
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                document_id,
+                chunk_index,
+                content,
+                vector_dims(embedding),
+                embedding IS NOT NULL
+            FROM document_chunks
+            WHERE document_id = %s
+            ORDER BY chunk_index
+            """,
+            (document_id,),
+        ).fetchall()
+
+    assert len(rows) == 1
+    assert rows[0][:3] == (
+        document_id,
+        0,
+        "This is the content that should be stored as a chunk.",
+    )
+    assert rows[0][3] == 384
+    assert rows[0][4] is True
+
 def test_upload_rejects_non_text_file():
     files = {
         "file": (
@@ -218,3 +258,164 @@ def test_upload_accepts_file_at_size_limit():
 
     assert data["filename"] == "maximum_size.txt"
     assert len(data["content"].encode("utf-8")) == MAX_UPLOAD_SIZE
+
+def test_search_endpoint_returns_results():
+    with get_connection() as conn:
+        document = conn.execute(
+            """
+            INSERT INTO documents (filename, content)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            ("api_search_test.txt", "Content for API search testing."),
+        ).fetchone()
+
+        document_id = document[0]
+
+        conn.execute(
+            """
+            INSERT INTO document_chunks (
+                document_id,
+                chunk_index,
+                content,
+                embedding
+            )
+            VALUES (%s, %s, %s, %s)
+            """,
+            (
+                document_id,
+                0,
+                "The capital of France is Paris.",
+                [1.0] + [0.0] * 383,
+            ),
+        )
+
+    response = client.get("/search?q=capital%20of%20France&limit=3")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["query"] == "capital of France"
+    assert len(data["results"]) == 1
+    assert data["results"][0]["content"] == "The capital of France is Paris."
+
+
+def test_search_endpoint_rejects_blank_query():
+    response = client.get("/search?q=%20%20%20")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Search query cannot be blank"
+
+
+def test_search_endpoint_rejects_invalid_limit():
+    response = client.get("/search?q=test&limit=0")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Limit must be between 1 and 20"
+
+def test_search_endpoint_requires_query():
+    response = client.get("/search")
+
+    assert response.status_code == 422
+
+
+def test_search_endpoint_rejects_non_integer_limit():
+    response = client.get("/search?q=test&limit=abc")
+
+    assert response.status_code == 422
+
+def test_search_endpoint_rejects_negative_max_distance():
+    response = client.get(
+        "/search?q=test&max_distance=-0.5"
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "max_distance must be greater than or equal to 0"
+    )
+
+def test_search_endpoint_passes_max_distance_to_search_chunks(monkeypatch):
+    from app import main
+
+    captured_params = {}
+
+    def fake_search_chunks(query, limit, max_distance):
+        captured_params["query"] = query
+        captured_params["limit"] = limit
+        captured_params["max_distance"] = max_distance
+        return []
+
+    monkeypatch.setattr(main, "search_chunks", fake_search_chunks)
+
+    response = client.get(
+        "/search?q=test&limit=3&max_distance=0.5"
+    )
+
+    assert response.status_code == 200
+    assert captured_params == {
+        "query": "test",
+        "limit": 3,
+        "max_distance": 0.5,
+    }
+    assert response.json() == {
+        "query": "test",
+        "results": [],
+    }
+
+
+def test_search_endpoint_filters_results_by_max_distance(monkeypatch):
+    from app import search
+
+    monkeypatch.setattr(
+        "app.search.generate_embedding",
+        lambda text: [1.0] + [0.0] * 383,
+    )
+
+    with get_connection() as conn:
+        document = conn.execute(
+            """
+            INSERT INTO documents (filename, content)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            ("api_distance_test.txt", "Distance filter test"),
+        ).fetchone()
+
+        document_id = document[0]
+
+        conn.execute(
+            """
+            INSERT INTO document_chunks (
+                document_id,
+                chunk_index,
+                content,
+                embedding
+            )
+            VALUES
+                (%s, %s, %s, %s),
+                (%s, %s, %s, %s),
+                (%s, %s, %s, %s)
+            """,
+            (
+                document_id, 0, "Same direction",
+                [1.0] + [0.0] * 383,
+                document_id, 1, "Perpendicular direction",
+                [0.0, 1.0] + [0.0] * 382,
+                document_id, 2, "Opposite direction",
+                [-1.0] + [0.0] * 383,
+            ),
+        )
+
+    response = client.get(
+        "/search?q=test&max_distance=1.0"
+    )
+
+    assert response.status_code == 200
+
+    results = response.json()["results"]
+
+    assert [result["content"] for result in results] == [
+        "Same direction",
+        "Perpendicular direction",
+    ]
